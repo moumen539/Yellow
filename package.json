@@ -1,0 +1,16 @@
+Enter{
+  "name": "discord-verify-bot",
+  "version": "1.0.0",
+  "description": "بوت ديسكورد للتحقق مع زر اثبت نفسك",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.1",
+    "dotenv": "^16.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
