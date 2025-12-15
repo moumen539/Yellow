@@ -1,4 +1,4 @@
-require("dotenv").config(); // قراءة المتغيرات من Environment
+require("dotenv").config(); // قراءة المتغيرات من .env
 
 const express = require("express");
 const axios = require("axios");
@@ -18,7 +18,7 @@ const app = express();
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const REDIRECT_URI = process.env.REDIRECT_URI; // ضع الرابط النهائي هنا من Render: https://your-app.onrender.com/callback
+const REDIRECT_URI = process.env.REDIRECT_URI;
 
 if (!REDIRECT_URI) {
   console.error("❌ يجب تعيين REDIRECT_URI في .env");
@@ -59,7 +59,7 @@ app.get("/callback", async (req, res) => {
     `);
   } catch (e) {
     console.error(e.response?.data || e);
-    res.send("❌ فشل التفويض (تحقق من Redirect URI و Client Secret)");
+    res.send("❌ فشل التفويض (تحقق من Redirect / Secret)");
   }
 });
 
@@ -115,12 +115,5 @@ bot.on("interactionCreate", async (i) => {
 bot.login(BOT_TOKEN);
 
 // استخدم PORT ديناميكي من Render
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🌐 Seller OAuth Running on port ${PORT}`));});
-
-// ================= START =================
-bot.login(BOT_TOKEN);
-
-// البورت الخاص بـ Render
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Seller OAuth Running on port ${PORT}`));
