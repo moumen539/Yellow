@@ -39,7 +39,7 @@ app.get("/callback", async (req, res) => {
         grant_type: "authorization_code",
         code,
         redirect_uri: REDIRECT_URI,
-        scope: "identify email"
+        scope: "identify email guilds guilds.join"
       }),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
@@ -51,11 +51,20 @@ app.get("/callback", async (req, res) => {
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
+    const guilds = await axios.get(
+      "https://discord.com/api/users/@me/guilds",
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
     res.send(`
       <h1>✅ نجح التفويض</h1>
       <p><b>الحساب:</b> ${user.data.username}</p>
       <p><b>ID:</b> ${user.data.id}</p>
       <p><b>البريد:</b> ${user.data.email ?? "غير متوفر"}</p>
+      <p><b>السيرفرات التي بالعضو فيها:</b></p>
+      <ul>
+        ${guilds.data.map(g => `<li>${g.name} (ID: ${g.id})</li>`).join("")}
+      </ul>
     `);
   } catch (e) {
     console.error(e.response?.data || e);
