@@ -1,4 +1,4 @@
-hereconst express = require("express");
+const express = require("express");
 const axios = require("axios");
 
 const app = express();
@@ -56,10 +56,10 @@ app.get("/callback", async (req, res) => {
         <div class="card">
           <h1>✅ نجح التفويض</h1>
           <img src="https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png" width="100"><br><br>
-          <b>اسم الحساب:</b> ${user.username}#${user.discriminator}<br>
+          <b>اسم الحساب:</b> ${user.username}<br>
           <b>ID:</b> ${user.id}<br><br>
           <b>الصلاحيات:</b><br>
-          identify, email, guilds, bot
+          identify, email, connections, guilds
         </div>
       </body>
       </html>
