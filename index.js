@@ -1,3 +1,5 @@
+require('dotenv').config(); // مهم جدًا لقراءة المتغيرات من Environment Variables
+
 const express = require("express");
 const axios = require("axios");
 const {
@@ -9,8 +11,6 @@ const {
   Routes,
   SlashCommandBuilder
 } = require("discord.js");
-
-require('dotenv').config();
 
 const app = express();
 
@@ -85,19 +85,13 @@ const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
 
 bot.once("ready", async () => {
   console.log(`🤖 Logged in as ${bot.user.tag}`);
-
-  await rest.put(
-    Routes.applicationCommands(CLIENT_ID),
-    { body: commands }
-  );
-
+  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
   console.log("✅ Slash commands registered");
 });
 
 // ================= SLASH HANDLER =================
 bot.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return interaction.reply({ content: "❌ تحتاج صلاحية Administrator", ephemeral: true });
   }
@@ -137,7 +131,6 @@ bot.on("interactionCreate", async (interaction) => {
         "نتمنى لكم وقتاً ممتعاً ✨"
       )
       .setThumbnail(interaction.guild.iconURL({ dynamic: true }));
-
     return interaction.reply({ embeds: [embed] });
   }
 
@@ -146,7 +139,6 @@ bot.on("interactionCreate", async (interaction) => {
       .setColor(0xFFD700)
       .setTitle(`📘 أوامر البوت - ${interaction.guild.name}`)
       .setDescription(
-        "مرحباً! هذه قائمة الأوامر المتوفرة للبوت:\n\n" +
         "✨ **/servers** أو `$servers` - عرض السيرفرات التي البوت داخلها\n" +
         "✨ **/invites** أو `$invites` - إنشاء روابط دعوة للسيرفرات\n" +
         "✨ **/فعل** أو `$فعل` - إرسال رسالة تفعيل السيرفر"
@@ -169,10 +161,9 @@ bot.on("messageCreate", async (msg) => {
       .setColor(0xFFD700)
       .setTitle(`📘 أوامر البوت - ${msg.guild.name}`)
       .setDescription(
-        "مرحباً! هذه قائمة الأوامر المتوفرة للبوت:\n\n" +
-        "✨ **/servers** أو `$servers` - عرض السيرفرات التي البوت داخلها\n" +
-        "✨ **/invites** أو `$invites` - إنشاء روابط دعوة للسيرفرات\n" +
-        "✨ **/فعل** أو `$فعل` - إرسال رسالة تفعيل السيرفر"
+        "✨ **/servers** أو `$servers`\n" +
+        "✨ **/invites** أو `$invites`\n" +
+        "✨ **/فعل** أو `$فعل`"
       )
       .setThumbnail(msg.guild.iconURL({ dynamic: true }))
       .setFooter({ text: "Yellow Team Bot", iconURL: msg.guild.iconURL({ dynamic: true }) });
