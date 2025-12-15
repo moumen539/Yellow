@@ -18,7 +18,12 @@ const app = express();
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const REDIRECT_URI = process.env.REDIRECT_URI || "https://yellow-2-qi00.onrender.com/callback";
+const REDIRECT_URI = process.env.REDIRECT_URI; // ضع الرابط النهائي هنا من Render: https://your-app.onrender.com/callback
+
+if (!REDIRECT_URI) {
+  console.error("❌ يجب تعيين REDIRECT_URI في .env");
+  process.exit(1);
+}
 
 // ================= OAuth =================
 app.get("/callback", async (req, res) => {
@@ -26,7 +31,7 @@ app.get("/callback", async (req, res) => {
   if (!code) return res.send("❌ لم يتم استلام كود التفويض");
 
   try {
-    const token = await axios.post(
+    const tokenResponse = await axios.post(
       "https://discord.com/api/oauth2/token",
       new URLSearchParams({
         client_id: CLIENT_ID,
@@ -39,9 +44,11 @@ app.get("/callback", async (req, res) => {
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
 
+    const accessToken = tokenResponse.data.access_token;
+
     const user = await axios.get(
       "https://discord.com/api/users/@me",
-      { headers: { Authorization: `Bearer ${token.data.access_token}` } }
+      { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
     res.send(`
@@ -52,14 +59,12 @@ app.get("/callback", async (req, res) => {
     `);
   } catch (e) {
     console.error(e.response?.data || e);
-    res.send("❌ فشل التفويض");
+    res.send("❌ فشل التفويض (تحقق من Redirect URI و Client Secret)");
   }
 });
 
 // ================= BOT =================
-const bot = new Client({
-  intents: [GatewayIntentBits.Guilds]
-});
+const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const commands = [
   new SlashCommandBuilder().setName("help").setDescription("أوامر البوت"),
@@ -77,6 +82,7 @@ bot.once("ready", async () => {
 
 bot.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
+
   if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator))
     return i.reply({ content: "❌ تحتاج Admin", ephemeral: true });
 
@@ -93,9 +99,7 @@ bot.on("interactionCreate", async (i) => {
   }
 
   if (i.commandName === "servers") {
-    return i.reply(
-      bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد"
-    );
+    return i.reply(bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد");
   }
 
   if (i.commandName === "فعل") {
@@ -106,6 +110,13 @@ bot.on("interactionCreate", async (i) => {
     return i.reply({ embeds: [embed] });
   }
 });
+
+// ================= START =================
+bot.login(BOT_TOKEN);
+
+// استخدم PORT ديناميكي من Render
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 Seller OAuth Running on port ${PORT}`));});
 
 // ================= START =================
 bot.login(BOT_TOKEN);
