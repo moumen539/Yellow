@@ -6,7 +6,7 @@ const app = express();
 // ====== ضع بياناتك ======
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
-const REDIRECT_URI = "https://discord-oauth-a8h1.onrender.com/callback";
+const REDIRECT_URI = "https://yellow-1-do42.onrender.com/callback";
 // ========================
 
 app.get("/", (req, res) => {
