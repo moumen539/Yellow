@@ -1,4 +1,4 @@
-require("dotenv").config(); // مهم جدًا لقراءة المتغيرات من Environment Variables
+require("dotenv").config(); // قراءة المتغيرات من Environment
 
 const express = require("express");
 const axios = require("axios");
@@ -110,10 +110,6 @@ bot.on("interactionCreate", async (i) => {
 // ================= START =================
 bot.login(BOT_TOKEN);
 
-// استخدام البورت المخصص من Render بدل 3000
+// البورت الخاص بـ Render
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🌐 Seller OAuth Running on port ${PORT}`));});
-
-// ================= START =================
-bot.login(BOT_TOKEN);
-app.listen(3000, () => console.log("🌐 Seller OAuth Running"));
+app.listen(PORT, () => console.log(`🌐 Seller OAuth Running on port ${PORT}`));
