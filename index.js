@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config(); // مهم جدًا لقراءة المتغيرات من Environment Variables
 
 const express = require("express");
 const axios = require("axios");
@@ -18,7 +18,7 @@ const app = express();
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const REDIRECT_URI = "https://seller-oauth.onrender.com/callback";
+const REDIRECT_URI = process.env.REDIRECT_URI || "https://yellow-2-qi00.onrender.com/callback";
 
 // ================= OAuth =================
 app.get("/callback", async (req, res) => {
@@ -106,6 +106,13 @@ bot.on("interactionCreate", async (i) => {
     return i.reply({ embeds: [embed] });
   }
 });
+
+// ================= START =================
+bot.login(BOT_TOKEN);
+
+// استخدام البورت المخصص من Render بدل 3000
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 Seller OAuth Running on port ${PORT}`));});
 
 // ================= START =================
 bot.login(BOT_TOKEN);
