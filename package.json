@@ -1,16 +1,16 @@
 {
-  "name": "discord-verify-bot",
+  "name": "discord-oauth-callback",
   "version": "1.0.0",
-  "description": "بوت ديسكورد للتحقق مع زر اثبت نفسك",
-  "main": "bot.js",
+  "description": "Discord OAuth2 Callback Server",
+  "main": "index.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.15.1",
-    "dotenv": "^16.4.0"
+    "axios": "^1.6.0",
+    "express": "^4.19.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18"
   }
 }
