@@ -1,12 +1,13 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-
 const express = require("express");
 const axios = require("axios");
+
 const {
   Client,
   GatewayIntentBits,
+  PermissionsBitField,
   EmbedBuilder,
   REST,
   Routes,
@@ -24,7 +25,7 @@ const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 
-if (!CLIENT_ID || !BOT_TOKEN || !CLIENT_SECRET || !REDIRECT_URI) {
+if (!CLIENT_ID || !CLIENT_SECRET || !BOT_TOKEN || !REDIRECT_URI) {
   console.error("❌ متغيرات البيئة ناقصة");
   process.exit(1);
 }
@@ -64,27 +65,27 @@ app.get("/callback", async (req, res) => {
 
     const accessToken = token.data.access_token;
 
-    const userRes = await axios.get(
+    const user = await axios.get(
       "https://discord.com/api/users/@me",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    const guildsRes = await axios.get(
+    const guilds = await axios.get(
       "https://discord.com/api/users/@me/guilds",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    oauthUsers[userRes.data.id] = {
-      user: userRes.data,
-      guilds: guildsRes.data,
+    oauthUsers[user.data.id] = {
+      user: user.data,
+      guilds: guilds.data,
       authorizedAt: new Date().toISOString()
     };
 
     saveDB(oauthUsers);
-
     res.send("✅ تم التفويض بنجاح، ارجع إلى ديسكورد");
-  } catch (err) {
-    console.error(err.response?.data || err);
+
+  } catch (e) {
+    console.error(e.response?.data || e);
     res.send("❌ فشل التفويض");
   }
 });
@@ -96,16 +97,94 @@ const bot = new Client({
 
 /* ===== Slash Commands ===== */
 const commands = [
+  new SlashCommandBuilder().setName("help").setDescription("أوامر البوت"),
+  new SlashCommandBuilder().setName("servers").setDescription("سيرفرات البوت"),
+  new SlashCommandBuilder().setName("فعل").setDescription("رسالة تفعيل"),
   new SlashCommandBuilder()
     .setName("info")
     .setDescription("معلومات تفويض حساب")
-    .addStringOption(opt =>
-      opt
-        .setName("id")
-        .setDescription("ID الحساب")
-        .setRequired(true)
+    .addStringOption(o =>
+      o.setName("id").setDescription("ID الحساب").setRequired(true)
     )
 ].map(c => c.toJSON());
+
+const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
+
+bot.once("ready", async () => {
+  console.log(`🤖 Logged in as ${bot.user.tag}`);
+  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+  console.log("✅ All Slash Commands Registered");
+});
+
+/* ===== Interactions ===== */
+bot.on("interactionCreate", async (i) => {
+
+  if (!i.isChatInputCommand() && !i.isButton()) return;
+
+  /* ===== INFO ===== */
+  if (i.isChatInputCommand() && i.commandName === "info") {
+    const userId = i.options.getString("id");
+    const data = oauthUsers[userId];
+
+    if (!data) {
+      return i.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0xFFD700)
+          .setTitle("❌ الحساب غير مفوّض")]
+      });
+    }
+
+    const u = data.user;
+
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✅ الحساب مفوّض")
+      .setThumbnail(`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`)
+      .addFields(
+        { name: "👤 الاسم", value: u.username, inline: true },
+        { name: "📧 الإيميل", value: u.email ?? "غير متوفر", inline: true }
+      );
+
+    return i.reply({ embeds: [embed] });
+  }
+
+  /* ===== ADMIN ONLY ===== */
+  if (i.isChatInputCommand()) {
+    if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator))
+      return i.reply({ content: "❌ تحتاج Admin", ephemeral: true });
+
+    if (i.commandName === "help") {
+      return i.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0xFFD700)
+          .setTitle("📘 أوامر البوت")
+          .setDescription("/info /servers /فعل /help")]
+      });
+    }
+
+    if (i.commandName === "servers") {
+      return i.reply(
+        bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد"
+      );
+    }
+
+    if (i.commandName === "فعل") {
+      return i.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0xFFD700)
+          .setTitle("✨ مرحباً بكم ✨")]
+      });
+    }
+  }
+});
+
+/* ================= START ================= */
+bot.login(BOT_TOKEN);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () =>
+  console.log(`🌐 OAuth running on port ${PORT}`)
+);].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
 
