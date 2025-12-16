@@ -24,8 +24,8 @@ const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 
-if (!REDIRECT_URI) {
-  console.error("❌ REDIRECT_URI غير موجود");
+if (!CLIENT_ID || !BOT_TOKEN || !CLIENT_SECRET || !REDIRECT_URI) {
+  console.error("❌ متغيرات البيئة ناقصة");
   process.exit(1);
 }
 
@@ -64,40 +64,46 @@ app.get("/callback", async (req, res) => {
 
     const accessToken = token.data.access_token;
 
-    const user = await axios.get(
+    const userRes = await axios.get(
       "https://discord.com/api/users/@me",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    const guilds = await axios.get(
+    const guildsRes = await axios.get(
       "https://discord.com/api/users/@me/guilds",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    oauthUsers[user.data.id] = {
-      user: user.data,
-      guilds: guilds.data,
+    oauthUsers[userRes.data.id] = {
+      user: userRes.data,
+      guilds: guildsRes.data,
       authorizedAt: new Date().toISOString()
     };
 
     saveDB(oauthUsers);
 
-    res.send("✅ تم التفويض بنجاح، يمكنك الرجوع إلى الديسكورد");
-  } catch (e) {
-    console.error(e.response?.data || e);
+    res.send("✅ تم التفويض بنجاح، ارجع إلى ديسكورد");
+  } catch (err) {
+    console.error(err.response?.data || err);
     res.send("❌ فشل التفويض");
   }
 });
 
 /* ================= BOT ================= */
-const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
+const bot = new Client({
+  intents: [GatewayIntentBits.Guilds]
+});
 
+/* ===== Slash Commands ===== */
 const commands = [
   new SlashCommandBuilder()
     .setName("info")
     .setDescription("معلومات تفويض حساب")
-    .addStringOption(o =>
-      o.setName("id").setDescription("ID الحساب").setRequired(true)
+    .addStringOption(opt =>
+      opt
+        .setName("id")
+        .setDescription("ID الحساب")
+        .setRequired(true)
     )
 ].map(c => c.toJSON());
 
@@ -105,19 +111,27 @@ const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
 
 bot.once("ready", async () => {
   console.log(`🤖 Logged in as ${bot.user.tag}`);
-  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-  console.log("✅ Commands registered");
+
+  await rest.put(
+    Routes.applicationCommands(CLIENT_ID),
+    { body: commands }
+  );
+
+  console.log("✅ Slash Commands Registered");
 });
 
-bot.on("interactionCreate", async (i) => {
-  if (!i.isChatInputCommand()) return;
+/* ===== Interactions ===== */
+bot.on("interactionCreate", async (interaction) => {
 
-  if (i.commandName === "info") {
-    const userId = i.options.getString("id");
+  /* ---- Slash Command ---- */
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName !== "info") return;
+
+    const userId = interaction.options.getString("id");
     const data = oauthUsers[userId];
 
     if (!data) {
-      return i.reply({
+      return interaction.reply({
         embeds: [
           new EmbedBuilder()
             .setColor(0xFFD700)
@@ -132,11 +146,15 @@ bot.on("interactionCreate", async (i) => {
     const embed = new EmbedBuilder()
       .setColor(0xFFD700)
       .setTitle("✅ الحساب مفوّض")
-      .setThumbnail(`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`)
+      .setThumbnail(
+        u.avatar
+          ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`
+          : null
+      )
       .addFields(
         { name: "👤 الاسم", value: u.username, inline: true },
         { name: "📧 الإيميل", value: u.email ?? "غير متوفر", inline: true },
-        { name: "🕒 تاريخ التفويض", value: data.authorizedAt }
+        { name: "🕒 تاريخ التفويض", value: `<t:${Math.floor(new Date(data.authorizedAt).getTime()/1000)}:R>` }
       );
 
     const row = new ActionRowBuilder().addComponents(
@@ -150,13 +168,19 @@ bot.on("interactionCreate", async (i) => {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    return i.reply({ embeds: [embed], components: [row] });
+    return interaction.reply({
+      embeds: [embed],
+      components: [row]
+    });
   }
 
-  if (i.isButton()) {
-    const [type, userId] = i.customId.split("_");
+  /* ---- Buttons ---- */
+  if (interaction.isButton()) {
+    const [type, userId] = interaction.customId.split("_");
     const data = oauthUsers[userId];
-    if (!data) return i.reply({ content: "❌ لا توجد بيانات", ephemeral: true });
+    if (!data) {
+      return interaction.reply({ content: "❌ لا توجد بيانات", ephemeral: true });
+    }
 
     if (type === "guilds") {
       const embed = new EmbedBuilder()
@@ -164,23 +188,33 @@ bot.on("interactionCreate", async (i) => {
         .setTitle("📜 السيرفرات");
 
       data.guilds.forEach(g =>
-        embed.addFields({ name: g.name, value: g.id, inline: true })
+        embed.addFields({
+          name: g.name,
+          value: `ID: ${g.id}`,
+          inline: true
+        })
       );
 
-      return i.update({ embeds: [embed] });
+      return interaction.update({ embeds: [embed], components: [] });
     }
 
     if (type === "user") {
       const u = data.user;
-      return i.update({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0xFFD700)
-            .setTitle("👤 معلومات الحساب")
-            .setThumbnail(`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`)
-            .setDescription(`📧 ${u.email ?? "غير متوفر"}`)
-        ]
-      });
+
+      const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("👤 معلومات الحساب")
+        .setThumbnail(
+          u.avatar
+            ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`
+            : null
+        )
+        .addFields(
+          { name: "الاسم", value: u.username, inline: true },
+          { name: "الإيميل", value: u.email ?? "غير متوفر", inline: true }
+        );
+
+      return interaction.update({ embeds: [embed], components: [] });
     }
   }
 });
@@ -189,25 +223,6 @@ bot.on("interactionCreate", async (i) => {
 bot.login(BOT_TOKEN);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`🌐 Seller OAuth Running on port ${PORT}`)
-);
-  if (i.commandName === "servers") {
-    return i.reply(bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد");
-  }
-
-  if (i.commandName === "فعل") {
-    const embed = new EmbedBuilder()
-      .setColor(0xFFD700)
-      .setTitle("✨ مرحباً بكم في Seller ✨")
-      .setDescription("أفضل مكان للتكوين والفعاليات 💛");
-    return i.reply({ embeds: [embed] });
-  }
+app.listen(PORT, () => {
+  console.log(`🌐 OAuth server running on port ${PORT}`);
 });
-
-// ================= START =================
-bot.login(BOT_TOKEN);
-
-// استخدم PORT ديناميكي من Render
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🌐 Seller OAuth Running on port ${PORT}`));
