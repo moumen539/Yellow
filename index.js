@@ -1,37 +1,55 @@
-require("dotenv").config(); // قراءة المتغيرات من .env
+require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 
 const express = require("express");
 const axios = require("axios");
 const {
   Client,
   GatewayIntentBits,
-  PermissionsBitField,
   EmbedBuilder,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
 
 const app = express();
 
-// ===== ENV =====
+/* ===== ENV ===== */
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 
 if (!REDIRECT_URI) {
-  console.error("❌ يجب تعيين REDIRECT_URI في .env");
+  console.error("❌ REDIRECT_URI غير موجود");
   process.exit(1);
 }
 
-// ================= OAuth =================
+/* ===== STORAGE ===== */
+const DB_FILE = path.join(__dirname, "oauth.json");
+
+function loadDB() {
+  if (!fs.existsSync(DB_FILE)) return {};
+  return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+}
+
+function saveDB(data) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
+let oauthUsers = loadDB();
+
+/* ================= OAuth ================= */
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
   if (!code) return res.send("❌ لم يتم استلام كود التفويض");
 
   try {
-    const tokenResponse = await axios.post(
+    const token = await axios.post(
       "https://discord.com/api/oauth2/token",
       new URLSearchParams({
         client_id: CLIENT_ID,
@@ -39,12 +57,12 @@ app.get("/callback", async (req, res) => {
         grant_type: "authorization_code",
         code,
         redirect_uri: REDIRECT_URI,
-        scope: "identify email guilds guilds.join"
+        scope: "identify email guilds"
       }),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
 
-    const accessToken = tokenResponse.data.access_token;
+    const accessToken = token.data.access_token;
 
     const user = await axios.get(
       "https://discord.com/api/users/@me",
@@ -56,29 +74,31 @@ app.get("/callback", async (req, res) => {
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    res.send(`
-      <h1>✅ نجح التفويض</h1>
-      <p><b>الحساب:</b> ${user.data.username}</p>
-      <p><b>ID:</b> ${user.data.id}</p>
-      <p><b>البريد:</b> ${user.data.email ?? "غير متوفر"}</p>
-      <p><b>السيرفرات التي بالعضو فيها:</b></p>
-      <ul>
-        ${guilds.data.map(g => `<li>${g.name} (ID: ${g.id})</li>`).join("")}
-      </ul>
-    `);
+    oauthUsers[user.data.id] = {
+      user: user.data,
+      guilds: guilds.data,
+      authorizedAt: new Date().toISOString()
+    };
+
+    saveDB(oauthUsers);
+
+    res.send("✅ تم التفويض بنجاح، يمكنك الرجوع إلى الديسكورد");
   } catch (e) {
     console.error(e.response?.data || e);
-    res.send("❌ فشل التفويض (تحقق من Redirect / Secret)");
+    res.send("❌ فشل التفويض");
   }
 });
 
-// ================= BOT =================
+/* ================= BOT ================= */
 const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const commands = [
-  new SlashCommandBuilder().setName("help").setDescription("أوامر البوت"),
-  new SlashCommandBuilder().setName("servers").setDescription("سيرفرات البوت"),
-  new SlashCommandBuilder().setName("فعل").setDescription("رسالة تفعيل")
+  new SlashCommandBuilder()
+    .setName("info")
+    .setDescription("معلومات تفويض حساب")
+    .addStringOption(o =>
+      o.setName("id").setDescription("ID الحساب").setRequired(true)
+    )
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
@@ -92,21 +112,86 @@ bot.once("ready", async () => {
 bot.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
-  if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator))
-    return i.reply({ content: "❌ تحتاج Admin", ephemeral: true });
+  if (i.commandName === "info") {
+    const userId = i.options.getString("id");
+    const data = oauthUsers[userId];
 
-  if (i.commandName === "help") {
+    if (!data) {
+      return i.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xFFD700)
+            .setTitle("❌ الحساب غير مفوّض")
+            .setDescription("هذا الحساب لم يقم بتفويض البوت")
+        ]
+      });
+    }
+
+    const u = data.user;
+
     const embed = new EmbedBuilder()
       .setColor(0xFFD700)
-      .setTitle("📘 أوامر Seller Bot")
-      .setDescription(
-        "**/servers** — السيرفرات\n" +
-        "**/فعل** — رسالة التفعيل\n" +
-        "**/help** — المساعدة"
+      .setTitle("✅ الحساب مفوّض")
+      .setThumbnail(`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`)
+      .addFields(
+        { name: "👤 الاسم", value: u.username, inline: true },
+        { name: "📧 الإيميل", value: u.email ?? "غير متوفر", inline: true },
+        { name: "🕒 تاريخ التفويض", value: data.authorizedAt }
       );
-    return i.reply({ embeds: [embed], ephemeral: true });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`guilds_${u.id}`)
+        .setLabel("📜 السيرفرات")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`user_${u.id}`)
+        .setLabel("👤 الحساب")
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
   }
 
+  if (i.isButton()) {
+    const [type, userId] = i.customId.split("_");
+    const data = oauthUsers[userId];
+    if (!data) return i.reply({ content: "❌ لا توجد بيانات", ephemeral: true });
+
+    if (type === "guilds") {
+      const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("📜 السيرفرات");
+
+      data.guilds.forEach(g =>
+        embed.addFields({ name: g.name, value: g.id, inline: true })
+      );
+
+      return i.update({ embeds: [embed] });
+    }
+
+    if (type === "user") {
+      const u = data.user;
+      return i.update({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xFFD700)
+            .setTitle("👤 معلومات الحساب")
+            .setThumbnail(`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`)
+            .setDescription(`📧 ${u.email ?? "غير متوفر"}`)
+        ]
+      });
+    }
+  }
+});
+
+/* ================= START ================= */
+bot.login(BOT_TOKEN);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () =>
+  console.log(`🌐 Seller OAuth Running on port ${PORT}`)
+);
   if (i.commandName === "servers") {
     return i.reply(bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد");
   }
