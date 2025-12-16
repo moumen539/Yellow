@@ -6,7 +6,6 @@ const axios = require("axios");
 const {
   Client,
   GatewayIntentBits,
-  PermissionsBitField,
   EmbedBuilder,
   REST,
   Routes,
@@ -73,7 +72,7 @@ app.get("/callback", async (req, res) => {
     });
 
     oauthUsers[user.data.id] = {
-      user: { ...user.data, access_token: accessToken }, // احفظ التوكن للاستخدام في /add
+      user: { ...user.data, access_token: accessToken },
       guilds: guilds.data,
       authorizedAt: new Date().toISOString()
     };
@@ -106,6 +105,137 @@ const slashCommands = [
     .setDescription("معلومات حساب مفوض")
     .addStringOption(o => o.setName("id").setDescription("ID الحساب").setRequired(true)),
   new SlashCommandBuilder()
+    .setName("add")
+    .setDescription("إضافة حساب مفوض إلى سيرفر باستخدام رابط الدعوة بدون ظهور رسالة")
+    .addStringOption(opt => opt.setName("userid").setDescription("ID الحساب المفوض").setRequired(true))
+    .addStringOption(opt => opt.setName("invite").setDescription("رابط الدعوة للسيرفر").setRequired(true))
+].map(c => c.toJSON());
+
+const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
+
+bot.once("ready", async () => {
+  console.log(`🤖 Logged in as ${bot.user.tag}`);
+  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: slashCommands });
+  console.log("✅ All Slash Commands Registered");
+});
+
+/* ===== Interactions ===== */
+bot.on("interactionCreate", async (i) => {
+  if (!i.isChatInputCommand() && !i.isButton()) return;
+
+  const replyNoData = { content: "❌ لا توجد بيانات", ephemeral: true };
+
+  /* ===== INFO ===== */
+  if (i.isChatInputCommand() && i.commandName === "info") {
+    const userId = i.options.getString("id");
+    const data = oauthUsers[userId];
+
+    if (!data) return i.reply({ embeds: [new EmbedBuilder().setColor(0xFFD700).setTitle("❌ الحساب غير مفوّض")] });
+
+    const u = data.user;
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✅ الحساب مفوّض")
+      .setThumbnail(u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` : null)
+      .addFields(
+        { name: "👤 الاسم", value: u.username, inline: true },
+        { name: "📧 الإيميل", value: u.email ?? "غير متوفر", inline: true },
+        { name: "🕒 تاريخ التفويض", value: `<t:${Math.floor(new Date(data.authorizedAt).getTime()/1000)}:R>` }
+      );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`guilds_${u.id}`).setLabel("📜 السيرفرات").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`user_${u.id}`).setLabel("👤 الحساب").setStyle(ButtonStyle.Secondary)
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  /* ===== HELP ===== */
+  if (i.isChatInputCommand() && i.commandName === "help") {
+    return i.reply({ embeds: [new EmbedBuilder().setColor(0xFFD700).setTitle("📘 أوامر البوت").setDescription("/info /servers /فعل /add /help")] });
+  }
+
+  /* ===== SERVERS ===== */
+  if (i.isChatInputCommand() && i.commandName === "servers") {
+    return i.reply(bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد");
+  }
+
+  /* ===== فَعّل ===== */
+  if (i.isChatInputCommand() && i.commandName === "فعل") {
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✨ مرحباً بكم في Yellow Team ✨")
+      .setDescription("أفضل سيرفر للفعاليات\n🔥 حرق كريديت\n🤝 تعرف على أصحاب السيرفر\nنتمنى لكم وقتاً ممتعاً!")
+      .setImage("https://i.imgur.com/yourServerImage.png");
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("تفعيل الحساب")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=email+guilds+guilds.members.read+identify`)
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  /* ===== ADD COMMAND ===== */
+  if (i.isChatInputCommand() && i.commandName === "add") {
+    const userId = i.options.getString("userid");
+    const inviteLink = i.options.getString("invite");
+    const data = oauthUsers[userId];
+
+    if (!data || !data.user.access_token) 
+      return i.reply({ content: "❌ هذا الحساب غير مفوّض أو لا يملك توكن صالح", ephemeral: true });
+
+    try {
+      const inviteCode = inviteLink.split("/").pop();
+
+      await axios.post(
+        `https://discord.com/api/v10/invites/${inviteCode}`,
+        {},
+        { headers: { Authorization: `Bearer ${data.user.access_token}` } }
+      );
+
+      await i.deferReply({ ephemeral: true });
+      await i.deleteReply();
+    } catch (err) {
+      console.error(err.response?.data || err);
+      return i.reply({ content: "❌ فشل إضافة الحساب للسيرفر", ephemeral: true });
+    }
+  }
+
+  /* ===== BUTTONS ===== */
+  if (i.isButton()) {
+    const [type, userId] = i.customId.split("_");
+    const data = oauthUsers[userId];
+    if (!data) return i.reply(replyNoData);
+
+    if (type === "guilds") {
+      const embed = new EmbedBuilder().setColor(0xFFD700).setTitle("📜 السيرفرات");
+      data.guilds.forEach(g => embed.addFields({ name: g.name, value: `ID: ${g.id}`, inline: true }));
+      return i.update({ embeds: [embed], components: [] });
+    }
+
+    if (type === "user") {
+      const u = data.user;
+      const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("👤 معلومات الحساب")
+        .setThumbnail(u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` : null)
+        .addFields(
+          { name: "الاسم", value: u.username, inline: true },
+          { name: "الإيميل", value: u.email ?? "غير متوفر", inline: true }
+        );
+      return i.update({ embeds: [embed], components: [] });
+    }
+  }
+});
+
+/* ================= START SERVER ================= */
+bot.login(BOT_TOKEN);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 OAuth running on port ${PORT}`));  new SlashCommandBuilder()
     .setName("add")
     .setDescription("إضافة حساب مفوض إلى سيرفر باستخدام رابط الدعوة بدون ظهور رسالة")
     .addStringOption(opt => opt.setName("userid").setDescription("ID الحساب المفوض").setRequired(true))
