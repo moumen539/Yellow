@@ -6,7 +6,6 @@ const axios = require("axios");
 const {
   Client,
   GatewayIntentBits,
-  PermissionsBitField,
   EmbedBuilder,
   REST,
   Routes,
@@ -106,6 +105,138 @@ const slashCommands = [
     .setDescription("معلومات حساب مفوض")
     .addStringOption(o => o.setName("id").setDescription("ID الحساب").setRequired(true))
 ].map(c => c.toJSON());
+
+const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
+
+bot.once("ready", async () => {
+  console.log(`🤖 Logged in as ${bot.user.tag}`);
+  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: slashCommands });
+  console.log("✅ All Slash Commands Registered");
+});
+
+/* ===== Interactions ===== */
+bot.on("interactionCreate", async (i) => {
+  if (!i.isChatInputCommand() && !i.isButton()) return;
+
+  const replyNoData = { content: "❌ لا توجد بيانات", ephemeral: true };
+
+  /* ===== INFO ===== */
+  if (i.isChatInputCommand() && i.commandName === "info") {
+    const userId = i.options.getString("id");
+    const data = oauthUsers[userId];
+
+    if (!data) return i.reply({ embeds: [new EmbedBuilder().setColor(0xFFD700).setTitle("❌ الحساب غير مفوّض")] });
+
+    const u = data.user;
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✅ الحساب مفوّض")
+      .setThumbnail(u.avatar ? u.avatar : null)
+      .addFields(
+        { name: "👤 الاسم", value: u.username, inline: true },
+        { name: "📧 الإيميل", value: u.email ?? "غير متوفر", inline: true },
+        { name: "🕒 تاريخ التفويض", value: `<t:${Math.floor(new Date(data.authorizedAt).getTime()/1000)}:R>` }
+      );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`guilds_${u.id}`).setLabel("📜 السيرفرات").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`user_${u.id}`).setLabel("👤 الحساب").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`changeAvatar_${u.id}`).setLabel("🖼️ تغيير الافاتار").setStyle(ButtonStyle.Success)
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  /* ===== HELP ===== */
+  if (i.isChatInputCommand() && i.commandName === "help") {
+    return i.reply({ embeds: [new EmbedBuilder().setColor(0xFFD700).setTitle("📘 أوامر البوت").setDescription("/info /servers /فعل /help")] });
+  }
+
+  /* ===== SERVERS ===== */
+  if (i.isChatInputCommand() && i.commandName === "servers") {
+    return i.reply(bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد");
+  }
+
+  /* ===== فَعّل ===== */
+  if (i.isChatInputCommand() && i.commandName === "فعل") {
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✨ مرحباً بكم في Yellow Team ✨")
+      .setDescription("أفضل سيرفر للفعاليات\n🔥 حرق كريديت\n🤝 تعرف على أصحاب السيرفر\nنتمنى لكم وقتاً ممتعاً!")
+      .setImage("https://i.imgur.com/yourServerImage.png");
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("تفعيل الحساب")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=email+guilds+guilds.members.read+identify`)
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  /* ===== BUTTONS ===== */
+  if (i.isButton()) {
+    const [type, userId] = i.customId.split("_");
+    const data = oauthUsers[userId];
+    if (!data) return i.reply(replyNoData);
+
+    if (type === "guilds") {
+      const embed = new EmbedBuilder().setColor(0xFFD700).setTitle("📜 السيرفرات");
+      data.guilds.forEach(g => embed.addFields({ name: g.name, value: `ID: ${g.id}`, inline: true }));
+      return i.update({ embeds: [embed], components: [] });
+    }
+
+    if (type === "user") {
+      const u = data.user;
+      const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("👤 معلومات الحساب")
+        .setThumbnail(u.avatar ? u.avatar : null)
+        .addFields(
+          { name: "الاسم", value: u.username, inline: true },
+          { name: "الإيميل", value: u.email ?? "غير متوفر", inline: true }
+        );
+      return i.update({ embeds: [embed], components: [] });
+    }
+
+    if (type === "changeAvatar") {
+      i.reply({ content: "🔗 أرسل رابط الصورة الجديدة للأفاتار:", ephemeral: true }).then(() => {
+        const filter = m => m.author.id === i.user.id;
+        const collector = i.channel.createMessageCollector({ filter, max: 1, time: 60000 });
+
+        collector.on("collect", msg => {
+          const url = msg.content.trim();
+          data.user.avatar = url;
+          saveDB(oauthUsers);
+
+          i.followUp({ content: "✅ تم تحديث الافاتار بنجاح!", ephemeral: true });
+
+          const embed = new EmbedBuilder()
+            .setColor(0xFFD700)
+            .setTitle("✅ الحساب مفوّض")
+            .setThumbnail(url)
+            .addFields(
+              { name: "👤 الاسم", value: data.user.username, inline: true },
+              { name: "📧 الإيميل", value: data.user.email ?? "غير متوفر", inline: true },
+              { name: "🕒 تاريخ التفويض", value: `<t:${Math.floor(new Date(data.authorizedAt).getTime()/1000)}:R>` }
+            );
+
+          i.message.edit({ embeds: [embed] });
+        });
+
+        collector.on("end", collected => {
+          if (collected.size === 0) i.followUp({ content: "❌ لم يتم إدخال رابط صورة", ephemeral: true });
+        });
+      });
+    }
+  }
+});
+
+/* ================= START SERVER ================= */
+bot.login(BOT_TOKEN);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 OAuth running on port ${PORT}`));].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
 
