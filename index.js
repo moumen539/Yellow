@@ -110,6 +110,133 @@ const restAPI = new REST({ version: "10" }).setToken(BOT_TOKEN);
 
 bot.once("ready", async () => {
   console.log(`🤖 Logged in as ${bot.user.tag}`);
+  // تسجيل جميع أوامر السلاش مرة واحدة
+  await restAPI.put(Routes.applicationCommands(CLIENT_ID), { body: slashCommands });
+  console.log("✅ All Slash Commands Registered");
+});
+
+/* ===== Interactions ===== */
+bot.on("interactionCreate", async (i) => {
+  if (!i.isChatInputCommand() && !i.isButton()) return;
+
+  // ===== INFO =====
+  if (i.isChatInputCommand() && i.commandName === "info") {
+    const userId = i.options.getString("id");
+    const data = oauthUsers[userId];
+
+    if (!data) {
+      return i.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0xFFD700)
+          .setTitle("❌ الحساب غير مفوّض")]
+      });
+    }
+
+    const u = data.user;
+
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✅ الحساب مفوّض")
+      .setThumbnail(u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` : null)
+      .addFields(
+        { name: "👤 الاسم", value: u.username, inline: true },
+        { name: "📧 الإيميل", value: u.email ?? "غير متوفر", inline: true },
+        { name: "🕒 تاريخ التفويض", value: `<t:${Math.floor(new Date(data.authorizedAt).getTime()/1000)}:R>` }
+      );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`guilds_${u.id}`)
+        .setLabel("📜 السيرفرات")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`user_${u.id}`)
+        .setLabel("👤 الحساب")
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  // ===== HELP =====
+  if (i.isChatInputCommand() && i.commandName === "help") {
+    return i.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("📘 أوامر البوت")
+        .setDescription("/info /servers /فعل /help")]
+    });
+  }
+
+  // ===== SERVERS =====
+  if (i.isChatInputCommand() && i.commandName === "servers") {
+    return i.reply(
+      bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد"
+    );
+  }
+
+  // ===== فَعّل =====
+  if (i.isChatInputCommand() && i.commandName === "فعل") {
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✨ مرحباً بكم في Yellow Team ✨")
+      .setDescription("أفضل سيرفر للفعاليات\n🔥 حرق كريديت\n🤝 تعرف على أصحاب السيرفر\nنتمنى لكم وقتاً ممتعاً!")
+      .setImage("https://i.imgur.com/yourServerImage.png"); // ضع رابط صورة السيرفر هنا
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("تفعيل الحساب")
+        .setStyle(ButtonStyle.Link)
+        .setURL("https://discord.com/oauth2/authorize?client_id=1450165867252940850&response_type=code&redirect_uri=https%3A%2F%2Fyellow-2-qi00.onrender.com%2Fcallback&scope=email+guilds+guilds.members.read+identify")
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  // ===== BUTTONS =====
+  if (i.isButton()) {
+    const [type, userId] = i.customId.split("_");
+    const data = oauthUsers[userId];
+    if (!data) return i.reply({ content: "❌ لا توجد بيانات", ephemeral: true });
+
+    if (type === "guilds") {
+      const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("📜 السيرفرات");
+
+      data.guilds.forEach(g =>
+        embed.addFields({ name: g.name, value: `ID: ${g.id}`, inline: true })
+      );
+
+      return i.update({ embeds: [embed], components: [] });
+    }
+
+    if (type === "user") {
+      const u = data.user;
+
+      const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("👤 معلومات الحساب")
+        .setThumbnail(u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` : null)
+        .addFields(
+          { name: "الاسم", value: u.username, inline: true },
+          { name: "الإيميل", value: u.email ?? "غير متوفر", inline: true }
+        );
+
+      return i.update({ embeds: [embed], components: [] });
+    }
+  }
+});
+
+/* ================= START ================= */
+bot.login(BOT_TOKEN);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 OAuth running on port ${PORT}`));
+const restAPI = new REST({ version: "10" }).setToken(BOT_TOKEN);
+
+bot.once("ready", async () => {
+  console.log(`🤖 Logged in as ${bot.user.tag}`);
   await restAPI.put(Routes.applicationCommands(CLIENT_ID), { body: slashCommands });
   console.log("✅ All Slash Commands Registered");
 });
