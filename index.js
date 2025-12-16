@@ -1,9 +1,8 @@
-require("dotenv").config(); // قراءة المتغيرات من .env
-
-const express = require("express");
-const axios = require("axios");
+require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const express = require("express");
+const axios = require("axios");
 const {
   Client,
   GatewayIntentBits,
@@ -19,7 +18,7 @@ const {
 
 const app = express();
 
-// ===== ENV =====
+/* ===== ENV ===== */
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -30,15 +29,21 @@ if (!CLIENT_ID || !CLIENT_SECRET || !BOT_TOKEN || !REDIRECT_URI) {
   process.exit(1);
 }
 
-// ===== STORAGE =====
+/* ===== STORAGE ===== */
 const DB_FILE = path.join(__dirname, "oauth.json");
-let oauthUsers = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf8")) : {};
 
-function saveDB() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(oauthUsers, null, 2));
+function loadDB() {
+  if (!fs.existsSync(DB_FILE)) return {};
+  return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
 }
 
-// ================= OAuth =================
+function saveDB(data) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
+let oauthUsers = loadDB();
+
+/* ================= OAuth ================= */
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
   if (!code) return res.send("❌ لم يتم استلام كود التفويض");
@@ -75,37 +80,170 @@ app.get("/callback", async (req, res) => {
       authorizedAt: new Date().toISOString()
     };
 
-    saveDB();
+    saveDB(oauthUsers);
 
     res.send(`
-      <h1>✅ تم التفويض بنجاح</h1>
+      <h1>✅ نجح التفويض</h1>
       <p><b>الحساب:</b> ${user.data.username}</p>
       <p><b>ID:</b> ${user.data.id}</p>
       <p><b>البريد:</b> ${user.data.email ?? "غير متوفر"}</p>
-      <p><b>السيرفرات:</b></p>
-      <ul>${guilds.data.map(g => `<li>${g.name} (ID: ${g.id})</li>`).join("")}</ul>
+      <p><b>السيرفرات التي بالعضو فيها:</b></p>
+      <ul>
+        ${guilds.data.map(g => `<li>${g.name} (ID: ${g.id})</li>`).join("")}
+      </ul>
     `);
-
   } catch (e) {
     console.error(e.response?.data || e);
     res.send("❌ فشل التفويض (تحقق من Redirect / Secret)");
   }
 });
 
-// ================= BOT =================
+/* ================= BOT ================= */
 const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// ===== Slash Commands =====
-const commands = [
+const slashCommands = [
   new SlashCommandBuilder().setName("help").setDescription("أوامر البوت"),
   new SlashCommandBuilder().setName("servers").setDescription("سيرفرات البوت"),
-  new SlashCommandBuilder().setName("فعل").setDescription("رسالة التفعيل"),
+  new SlashCommandBuilder().setName("فعل").setDescription("رسالة تفعيل"),
   new SlashCommandBuilder()
     .setName("info")
-    .setDescription("معلومات تفويض حساب")
+    .setDescription("معلومات حساب مفوض")
     .addStringOption(o => o.setName("id").setDescription("ID الحساب").setRequired(true))
 ].map(c => c.toJSON());
 
+const restAPI = new REST({ version: "10" }).setToken(BOT_TOKEN);
+
+bot.once("ready", async () => {
+  console.log(`🤖 Logged in as ${bot.user.tag}`);
+  await restAPI.put(Routes.applicationCommands(CLIENT_ID), { body: slashCommands });
+  console.log("✅ All Slash Commands Registered");
+});
+
+/* ===== Interactions ===== */
+bot.on("interactionCreate", async (i) => {
+  if (!i.isChatInputCommand() && !i.isButton()) return;
+
+  /* ===== INFO ===== */
+  if (i.isChatInputCommand() && i.commandName === "info") {
+    const userId = i.options.getString("id");
+    const data = oauthUsers[userId];
+
+    if (!data) {
+      return i.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0xFFD700)
+          .setTitle("❌ الحساب غير مفوّض")]
+      });
+    }
+
+    const u = data.user;
+
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✅ الحساب مفوّض")
+      .setThumbnail(u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` : null)
+      .addFields(
+        { name: "👤 الاسم", value: u.username, inline: true },
+        { name: "📧 الإيميل", value: u.email ?? "غير متوفر", inline: true },
+        { name: "🕒 تاريخ التفويض", value: `<t:${Math.floor(new Date(data.authorizedAt).getTime()/1000)}:R>` }
+      );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`guilds_${u.id}`)
+        .setLabel("📜 السيرفرات")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`user_${u.id}`)
+        .setLabel("👤 الحساب")
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  /* ===== ADMIN CHECK ===== */
+  if (i.isChatInputCommand() && !i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return i.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(0xFF0000)
+        .setTitle("❌ لا تملك صلاحية Admin لتشغيل هذا الأمر")],
+      ephemeral: true
+    });
+  }
+
+  /* ===== HELP ===== */
+  if (i.isChatInputCommand() && i.commandName === "help") {
+    return i.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("📘 أوامر البوت")
+        .setDescription("/info /servers /فعل /help")]
+    });
+  }
+
+  /* ===== SERVERS ===== */
+  if (i.isChatInputCommand() && i.commandName === "servers") {
+    return i.reply(bot.guilds.cache.map(g => `• ${g.name}`).join("\n") || "لا يوجد");
+  }
+
+  /* ===== فَعّل ===== */
+  if (i.isChatInputCommand() && i.commandName === "فعل") {
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle("✨ مرحباً بكم في Seller ✨")
+      .setDescription("أفضل مكان للتكوين والفعاليات 💛");
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("تفعيل الحساب")
+        .setStyle(ButtonStyle.Link)
+        .setURL("https://discord.com/oauth2/authorize?client_id=1450165867252940850&response_type=code&redirect_uri=https%3A%2F%2Fyellow-2-qi00.onrender.com%2Fcallback&scope=email+guilds+guilds.members.read+identify")
+    );
+
+    return i.reply({ embeds: [embed], components: [row] });
+  }
+
+  /* ===== BUTTONS ===== */
+  if (i.isButton()) {
+    const [type, userId] = i.customId.split("_");
+    const data = oauthUsers[userId];
+    if (!data) return i.reply({ content: "❌ لا توجد بيانات", ephemeral: true });
+
+    if (type === "guilds") {
+      const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("📜 السيرفرات");
+
+      data.guilds.forEach(g =>
+        embed.addFields({ name: g.name, value: `ID: ${g.id}`, inline: true })
+      );
+
+      return i.update({ embeds: [embed], components: [] });
+    }
+
+    if (type === "user") {
+      const u = data.user;
+
+      const embed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle("👤 معلومات الحساب")
+        .setThumbnail(u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` : null)
+        .addFields(
+          { name: "الاسم", value: u.username, inline: true },
+          { name: "الإيميل", value: u.email ?? "غير متوفر", inline: true }
+        );
+
+      return i.update({ embeds: [embed], components: [] });
+    }
+  }
+});
+
+/* ================= START ================= */
+bot.login(BOT_TOKEN);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 OAuth running on port ${PORT}`));
 // ===== REST API =====
 const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
 
